@@ -1,0 +1,29 @@
+services:
+
+  drone:
+    image: tharp789/skyer_onboard
+    build:
+      context: ./ 
+      dockerfile: docker/Dockerfile.drone_image
+    depends_on:
+    - base
+    entrypoint: ["/root/entrypoint.sh"]
+    environment:
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0 # flight controller
+    network_mode: host
+    privileged: true
+    ipc: host
+    pid: host
+    stdin_open: true
+    tty: true
+    volumes:
+      - /tmp:/tmp 
+      - /dev:/dev 
+      - ./skyer_onboard/:/root/ros2_ws/:rw
+      - ${STORAGE_PATH}:/root/data_collection/:rw
+
+networks:
+  drone_network:
+    driver: bridge
+    attachable: true

@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<mavlink>
+  <version>1</version>
+  <dialect>100</dialect>
+  
+  <enums>
+    <enum name="CAMERA_ACTION">
+      <description>Camera actions for mission waypoints</description>
+      <entry value="0" name="CAMERA_ACTION_NONE">
+        <description>No camera action</description>
+      </entry>
+      <entry value="1" name="CAMERA_ACTION_CAPTURE">
+        <description>Trigger camera capture</description>
+      </entry>
+      <entry value="2" name="CAMERA_ACTION_START_VIDEO">
+        <description>Start video recording</description>
+      </entry>
+      <entry value="3" name="CAMERA_ACTION_STOP_VIDEO">
+        <description>Stop video recording</description>
+      </entry>
+      <entry value="4" name="PANORAMA_CAPTURE">
+        <description>Capture a panorama at point</description>
+      </entry>
+    </enum>
+    
+    <enum name="MISSION_CHUNK_RESULT">
+      <description>Result codes for mission chunk acknowledgment</description>
+      <entry value="0" name="MISSION_CHUNK_ACCEPTED">
+        <description>Chunk accepted successfully</description>
+      </entry>
+      <entry value="1" name="MISSION_CHUNK_ERROR">
+        <description>Generic error</description>
+      </entry>
+      <entry value="2" name="MISSION_CHUNK_OUT_OF_ORDER">
+        <description>Chunk received out of expected order</description>
+      </entry>
+      <entry value="3" name="MISSION_CHUNK_INVALID_ID">
+        <description>Mission ID mismatch during transfer</description>
+      </entry>
+    </enum>
+  </enums>
+  
+  <messages>
+    <message id="200" name="MISSION_CHUNK">
+      <description>Chunked mission that is assembled on recieve, max 18 waypoints per chunk</description>
+      <field type="uint32_t" name="mission_id">Unique identifier for this mission (ties chunks together)</field>
+      <field type="uint16_t" name="total_waypoints">Total number of waypoints in the complete mission</field>
+      <field type="uint8_t" name="total_chunks">Total number of chunks to expect for this mission</field>
+      <field type="uint8_t" name="chunk_id">Index of this chunk (0-based)</field>
+      <field type="uint8_t" name="num_in_chunk">Number of valid waypoints in this chunk (max 10)</field>
+      <field type="float[18]" name="lat">Latitude of waypoints in degrees</field>
+      <field type="float[18]" name="lon">Longitude of waypoints in degrees</field>
+      <field type="float[18]" name="alt">Altitude of waypoints in meters (AMSL)</field>
+      <field type="uint8_t[18]" name="camera_action">Camera action at each waypoint (see CAMERA_ACTION enum)</field>
+    </message>
+    
+    <message id="201" name="MISSION_CHUNK_ACK">
+      <description>Acknowledgment for MISSION_CHUNK message</description>
+      <field type="uint32_t" name="mission_id">Mission ID being acknowledged</field>
+      <field type="uint8_t" name="chunk_id">Chunk index being acknowledged</field>
+      <field type="uint8_t" name="result">Result code (see MISSION_CHUNK_RESULT enum)</field>
+      <field type="uint8_t" name="chunks_received">Total chunks received so far for this mission</field>
+    </message>
+  </messages>
+</mavlink>

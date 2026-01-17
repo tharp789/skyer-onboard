@@ -1,0 +1,214 @@
+
+import copy
+from rclpy.node import Node
+from pathlib import Path
+from std_msgs.msg import Bool
+import yaml
+import subprocess
+import signal
+import time
+import os
+import rclpy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
+import datetime
+import psutil
+
+class BagRecorderNode(Node):
+    def __init__(self):
+        super().__init__("bag_record_node")
+
+        self.node_name = self.get_name() # Get the full node name, including namespace if any
+
+        self.declare_parameter(
+            "cfg_path", str(Path(__file__).parents[3] / "config/cfg.yaml")
+        )
+
+        self.declare_parameter(
+            "output_dir", str("/logging/")
+        )
+        
+        self.declare_parameter(
+            "mcap_qos_dir", ""
+        )
+        
+        self.cfg_path     = self.get_parameter("cfg_path").get_parameter_value().string_value
+        self.output_dir   = self.get_parameter("output_dir").get_parameter_value().string_value
+        self.mcap_qos_dir = self.get_parameter("mcap_qos_dir").get_parameter_value().string_value
+
+        self.active = False
+        self.cfg = yaml.safe_load(open(self.cfg_path))
+
+        # TODO: check if the output directory exists.
+        # Exit if it does not exist.
+        self.get_logger().info(f"Switching to output directory: {self.output_dir}")
+        os.chdir(self.output_dir)
+
+        self.command_prefix = ["ros2", "bag", "record", "-s", "mcap"]
+        self.commands = dict()
+        self.add_topics()
+
+        self.process = dict()
+
+        self.run()
+        
+    def add_topics(self):
+        '''The configuration file looks like
+        
+            sections:
+                gps_lidar_spot_depth_status:
+                    mcap_qos: mcap_qos.yaml
+                    args: 
+                    - -b
+                    - 4000000000 # ~4GB
+                    - --max-cache-size 
+                    - 1073741824 # 1GB
+                    topics:
+                    - /tf
+                    - gq7/ekf/llh_position
+                    
+            The -o or --output argument should not be specified here.
+            The "mcap_qos" field here will be interpreted as the filename of the MCAP QoS profile.
+            
+            self.commands[section_name] = {
+                'prefix': [],
+                'suffix': [],
+            }
+        '''
+        namespace = self.get_namespace()
+        
+        for section_name, section_config in self.cfg['sections'].items():
+            self.commands[section_name] = dict()
+            
+            # Command lists.
+            self.commands[section_name]['prefix'] = []
+            self.commands[section_name]['suffix'] = []
+            
+            # Populate the initial command line.
+            self.commands[section_name]['prefix'].extend(self.command_prefix)
+            
+            # Add the args to the command line.
+            str_args = [ str(c) for c in section_config['args'] ]
+            self.commands[section_name]['prefix'].extend(str_args)
+            
+            # Set the mcap qos profile.
+            if section_config['mcap_qos'] != "":
+                mcap_qos_path = os.path.join(self.mcap_qos_dir, str(section_config['mcap_qos']))
+                self.commands[section_name]['prefix'].append('--storage-config-file')
+                self.commands[section_name]['prefix'].append(mcap_qos_path)
+            
+            self.get_logger().info(
+                f'CMD for section {section_name}: '
+                f'{" ".join(self.commands[section_name]["prefix"])}' )
+            
+            # Add the topics to the command at the end.
+            self.get_logger().info(f"Recording section {section_name} topics:")
+            if 'exclude' in section_config.keys():
+                if 'topics' in section_config.keys():
+                    self.get_logger().error('Cannot mix exclude with topics.')
+                    exit()
+                
+                self.commands[section_name]['suffix'].append('--all')
+                for topic in section_config['exclude']:
+                    self.commands[section_name]['suffix'].append('--exclude')
+                    self.commands[section_name]['suffix'].append(topic)
+                self.get_logger().info(str(self.commands[section_name]))
+            else:
+                for topic in section_config['topics']:
+                    if topic.startswith('/'):
+                        full_topic_name = topic
+                    else:
+                        full_topic_name = f"{namespace}/{topic}"
+
+                    if full_topic_name.endswith('/'):
+                        time.sleep(5.0)
+                        topics = self.get_all_matching_topics(full_topic_name)
+                        for topic in topics:
+                            self.commands[section_name]['suffix'].append(topic)
+                            self.get_logger().info(f"{topic}")
+                    else:
+                        self.commands[section_name]['suffix'].append(full_topic_name)
+                        self.get_logger().info(f"{full_topic_name}")
+    
+    def get_all_matching_topics(self, topic_prefix):
+        """Get all topics that start with the given prefix."""
+        all_topics = self.get_topic_names_and_types()
+        matching_topics = [topic for topic, _ in all_topics if topic.startswith(topic_prefix)]
+        return matching_topics
+
+    def run(self):
+        if not self.active:
+            self.active = True
+            
+            time_suffix = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            for section_name, command_dict in self.commands.items():
+                cmd = copy.deepcopy(command_dict['prefix'])
+                
+                # Set the output filename.
+                output_filename = f"{section_name}_{time_suffix}"
+                cmd.append('-o')
+                cmd.append(output_filename)
+                
+                # Appending an empty string will cause the ros2 bag record to consider the space as a topic
+                # and introduce an error.
+                if len(command_dict['suffix']) > 0:
+                    cmd.extend(command_dict['suffix'])
+                
+                self.get_logger().info(f"Running command: {' '.join(cmd)}")
+                #self.get_logger().info(f"Running command: {cmd}")
+                
+                self.process[section_name] = dict()
+                self.process[section_name]['process'] = subprocess.Popen(cmd)
+                self.process[section_name]['pid'] = self.process[section_name]['process'].pid
+                self.process[section_name]['output_filename'] = output_filename
+                self.get_logger().info(f"Started Recording Section {section_name} with PID {self.process[section_name]['pid']} to {output_filename}")
+
+    def terminate_proc_and_children(self, pid):
+        try:
+            proc = psutil.Process(pid)
+            for child_proc in proc.children(recursive=True):
+                child_proc.send_signal(signal.SIGINT)
+                child_proc.wait()
+            proc.send_signal(signal.SIGINT)
+            proc.wait()
+        except Exception as e:
+            self.get_logger().error(f"Could not kill child processes of recording PID (PID number: {pid}), faced error {e}")
+        
+        try:
+            proc = psutil.Process(pid)
+            proc.terminate()
+            proc.wait()
+        except psutil.NoSuchProcess:
+            self.get_logger().info("Recorder has been killed")
+
+    
+    def interrupt(self):
+        if self.active:
+            for section_name, process in self.process.items():
+                self.terminate_proc_and_children(process["pid"])
+                self.get_logger().info(f"Ending Recording of Section {section_name} with PID {process['pid']}")
+            self.active = False
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = BagRecorderNode()
+
+    def interrupt_handler(signum, frame):
+        node.get_logger().info(f"Received signal {signum}, shutting down...")
+        node.interrupt()
+        node.destroy_node()
+        rclpy.try_shutdown()
+    
+    signal.signal(signal.SIGINT, interrupt_handler)
+    signal.signal(signal.SIGTERM, interrupt_handler)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.interrupt()
+        node.destroy_node()
+        rclpy.try_shutdown()
+    except Exception as e:
+        node.get_logger().error(f"Error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
