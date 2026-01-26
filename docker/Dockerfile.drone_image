@@ -109,7 +109,26 @@ RUN pip3 install \
 
 RUN apt-get update && apt-get install -y telnet
 
-COPY docker/autonomy_entrypoint.sh /root/entrypoint.sh
+# Add MAVSDK repository (architecture-aware)
+ARG TARGETARCH
+ARG TARGETVARIANT
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+      wget https://github.com/mavlink/MAVSDK/releases/download/v3.0.0/libmavsdk-dev_3.0.0_ubuntu24.04_amd64.deb && \
+      dpkg -i libmavsdk-dev_3.0.0_ubuntu24.04_amd64.deb && \
+      rm libmavsdk-dev_3.0.0_ubuntu24.04_amd64.deb; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+      wget https://github.com/mavlink/MAVSDK/releases/download/v3.0.0/libmavsdk-dev_3.0.0_ubuntu24.04_arm64.deb && \
+      dpkg -i libmavsdk-dev_3.0.0_ubuntu24.04_arm64.deb && \
+      rm libmavsdk-dev_3.0.0_ubuntu24.04_arm64.deb; \
+    elif [ "$TARGETARCH" = "arm" ]; then \
+      echo "ARMv7 architecture detected - building MAVSDK from source may be required" && \
+      echo "For now, attempting to use arm64 package if compatible" || true; \
+    else \
+      echo "Unsupported architecture: $TARGETARCH" && exit 1; \
+    fi && \
+    apt-get install -y -f
+
+COPY docker/drone_entrypoint.sh /root/entrypoint.sh
 RUN chmod +x /root/entrypoint.sh
 
 RUN echo "alias sws='source ~/.bash_profile && source /root/dependencies_ws/install/setup.bash && source /root/ros2_ws/install/setup.bash'" >> ~/.bashrc && \

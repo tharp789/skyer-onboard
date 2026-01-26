@@ -12,12 +12,17 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # Required packages
-find_package(ament_cmake REQUIRED)
-find_package(mavsdk REQUIRED)
+find_package(MAVSDK REQUIRED)
+
+add_executable(send_mission send_mission.cpp)
 
 # Include and link C++ libraries
 target_include_directories(send_mission PRIVATE
     ${mavsdk_INCLUDE_DIRS}
 )
 
-ament_package()
+target_include_directories(send_mission PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../mavlink/generated
+)
+
+target_link_libraries(send_mission PRIVATE MAVSDK::mavsdk)

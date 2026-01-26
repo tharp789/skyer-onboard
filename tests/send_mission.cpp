@@ -4,8 +4,7 @@
 
 using namespace mavsdk;
 
-struct Mission {}
-\
+struct Mission {};
 
 int main() {
     Mavsdk mavsdk;

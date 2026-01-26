@@ -25,15 +25,3 @@ systemctl daemon-reload
 # Enable the service to start on boot
 echo "Enabling $SERVICE_NAME service..."
 systemctl enable $SERVICE_NAME
-
-echo ""
-echo "Installation complete!"
-echo ""
-echo "Commands:"
-echo "  Start now:      sudo systemctl start $SERVICE_NAME"
-echo "  Stop:           sudo systemctl stop $SERVICE_NAME"
-echo "  Check status:   sudo systemctl status $SERVICE_NAME"
-echo "  View logs:      sudo journalctl -u $SERVICE_NAME -f"
-echo "  Disable:        sudo systemctl disable $SERVICE_NAME"
-echo ""
-echo "Note: Edit /etc/systemd/system/$SERVICE_FILE to change STORAGE_PATH if needed."
