@@ -1,6 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <mavros_msgs/msg/mavlink.hpp>
-#include <wire_interfaces/msg/mission.hpp>
+#include <interfaces/msg/mission.hpp>
 
 #include "mission_decoder/mission_chunk.hpp"
 
@@ -27,7 +27,7 @@ public:
       std::bind(&MissionDecoderNode::mavlink_callback, this, std::placeholders::_1));
 
     // Publisher for decoded complete missions
-    mission_pub_ = this->create_publisher<wire_interfaces::msg::Mission>(
+    mission_pub_ = this->create_publisher<interfaces::msg::Mission>(
       "~/mission",
       10);
 
@@ -179,7 +179,7 @@ private:
       assembly.mission_id, assembly.total_waypoints);
 
     // Create mission message with all waypoints
-    wire_interfaces::msg::Mission msg;
+    interfaces::msg::Mission msg;
     msg.mission_id = assembly.mission_id;
     msg.num_waypoints = assembly.total_waypoints;
 
@@ -232,7 +232,7 @@ private:
 
   // Subscribers and publishers
   rclcpp::Subscription<mavros_msgs::msg::Mavlink>::SharedPtr mavlink_sub_;
-  rclcpp::Publisher<wire_interfaces::msg::Mission>::SharedPtr mission_pub_;
+  rclcpp::Publisher<interfaces::msg::Mission>::SharedPtr mission_pub_;
   rclcpp::TimerBase::SharedPtr cleanup_timer_;
 
   // Mission assembly state

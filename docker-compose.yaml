@@ -10,7 +10,7 @@ services:
     entrypoint: ["/root/entrypoint.sh"]
     environment:
     devices:
-      - /dev/ttyACM0:/dev/ttyACM0 # flight controller
+      - /dev/ttyUSB0:/dev/ttyUSB0 # flight controller
     network_mode: host
     privileged: true
     ipc: host
@@ -20,8 +20,8 @@ services:
     volumes:
       - /tmp:/tmp 
       - /dev:/dev 
-      - ./skyer_onboard/:/root/ros2_ws/:rw
-      - ${STORAGE_PATH}:/root/data_collection/:rw
+      - /opt/vc:/opt/vc
+
 
 networks:
   drone_network:

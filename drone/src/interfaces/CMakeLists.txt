@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(wire_interfaces)
+project(interfaces)
 
 # Default to C++14
 if(NOT CMAKE_CXX_STANDARD)
@@ -17,9 +17,6 @@ find_package(std_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/WireDetection.msg"
-  "msg/WireDetections.msg"
-  "msg/WireTarget.msg"
   "msg/Mission.msg"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces)
 

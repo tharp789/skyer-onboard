@@ -14,7 +14,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(mavros_msgs REQUIRED)
-find_package(wire_interfaces REQUIRED)
+find_package(interfaces REQUIRED)
 
 # Build the mission decoder node
 add_executable(mission_decoder_node
@@ -29,7 +29,7 @@ target_include_directories(mission_decoder_node PUBLIC
 ament_target_dependencies(mission_decoder_node
   rclcpp
   mavros_msgs
-  wire_interfaces
+  interfaces
 )
 
 # Install targets

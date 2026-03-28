@@ -1,27 +1,9 @@
-ARG IMAGE_NAME=ahmedsoliman9/ubuntu-22.04-ros2-humble:latest
+ARG IMAGE_NAME=ros:humble-ros-base-jammy
 
 FROM ${IMAGE_NAME}
 ENV DEBIAN_FRONTEND=noninteractive
-
-ARG ROS2_DISTRO=humble  
-
-ENV ROS_DISTRO=${ROS2_DISTRO}
-
-RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
- && echo "deb [signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo "$UBUNTU_CODENAME") main" > /etc/apt/sources.list.d/ros2.list
-
-# Base dependencies -----------------------------
-RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata sudo locales \
-  && ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime \
-  && dpkg-reconfigure --frontend noninteractive tzdata \
-  && locale-gen en_US en_US.UTF-8 \
-  && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
-
-ENV TZ=America/New_York
-ENV LANG=en_US.UTF-8
+ENV ROS_DISTRO=humble
+ENV LD_LIBRARY_PATH=/opt/vc/lib
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
@@ -52,51 +34,21 @@ RUN apt-get update && \
   libpq-dev \
   zstd \
   usbutils \
+  v4l-utils \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
   
 RUN pip3 install -U protobuf
 
-WORKDIR /root/ros2_ws/
-RUN echo "source /opt/ros/$ROS_DISTRO/install/setup.bash" >> ~/.bashrc
-
 RUN apt-get update && apt-get install -y \
-libgoogle-glog-dev libatlas-base-dev libsuitesparse-dev libboost-python-dev libboost-dev libboost-filesystem-dev \
-libboost-program-options-dev libeigen3-dev \
-geographiclib-tools libgeographic-dev python3-vcstool python3-rosinstall-generator python3-osrf-pycommon
-
-# MAVROS
-WORKDIR /root/dependencies_ws/
-RUN rosinstall_generator --format repos mavlink | tee /tmp/mavlink.repos && \
-rosinstall_generator --format repos --upstream mavros | tee -a /tmp/mavros.repos && \
-vcs import src < /tmp/mavlink.repos && vcs import src < /tmp/mavros.repos
-
-# MAVROS Dependencies
-WORKDIR /root/dependencies_ws/src/
-RUN git clone https://github.com/ros/eigen_stl_containers.git -b ros2
-RUN git clone https://github.com/ros-geographic-info/geographic_info.git -b ros2
-RUN git clone https://github.com/ros/diagnostics.git -b ros2
-
-# MCAP
-WORKDIR /root/dependencies_ws/src/
-RUN git clone https://github.com/ros2/rosbag2.git -b humble && \
-    cp -r rosbag2/rosbag2_storage_mcap/ . && \
-    rm -rf rosbag2
-
-WORKDIR /root/dependencies_ws
-RUN /bin/bash -c "source ~/.bash_profile && source /opt/ros/humble/install/setup.bash && \
-colcon build --parallel-workers $(nproc) --symlink-install \
-  --event-handlers console_direct+ --base-paths src \
-  --cmake-args -Wno-dev ' -DCMAKE_BUILD_TYPE=Release' \
-  '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -march=native -ffast-math' \
-  ' -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs' \
-  ' -DCMAKE_CXX_FLAGS="-Wl,--allow-shlib-undefined"' \
-  ' --no-warn-unused-cli' "
-  
-# General ROS2 Dependencies -----------------------------------------------------------------------------------------------------
-WORKDIR /root/ros2_ws/
-RUN pip uninstall matplotlib -y
-RUN /root/dependencies_ws/src/mavros/mavros/scripts/install_geographiclib_datasets.sh
+    ros-humble-rosbag2-storage-mcap \
+    ros-humble-mavros \
+    ros-humble-ament-cmake
+RUN if [ -f "/opt/ros/${ROS_DISTRO}/lib/mavros/install_geographiclib_datasets.sh" ]; then \
+      /opt/ros/${ROS_DISTRO}/lib/mavros/install_geographiclib_datasets.sh; \
+    else \
+      echo "mavros geographiclib installer not found" && exit 1; \
+    fi
 
 RUN pip3 install \
   matplotlib \
@@ -105,37 +57,15 @@ RUN pip3 install \
   wheel \
   pymavlink \
   pyyaml \
-  pybind11
-
-RUN apt-get update && apt-get install -y telnet
-
-# Add MAVSDK repository (architecture-aware)
-ARG TARGETARCH
-ARG TARGETVARIANT
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-      wget https://github.com/mavlink/MAVSDK/releases/download/v3.0.0/libmavsdk-dev_3.0.0_ubuntu24.04_amd64.deb && \
-      dpkg -i libmavsdk-dev_3.0.0_ubuntu24.04_amd64.deb && \
-      rm libmavsdk-dev_3.0.0_ubuntu24.04_amd64.deb; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-      wget https://github.com/mavlink/MAVSDK/releases/download/v3.0.0/libmavsdk-dev_3.0.0_ubuntu24.04_arm64.deb && \
-      dpkg -i libmavsdk-dev_3.0.0_ubuntu24.04_arm64.deb && \
-      rm libmavsdk-dev_3.0.0_ubuntu24.04_arm64.deb; \
-    elif [ "$TARGETARCH" = "arm" ]; then \
-      echo "ARMv7 architecture detected - building MAVSDK from source may be required" && \
-      echo "For now, attempting to use arm64 package if compatible" || true; \
-    else \
-      echo "Unsupported architecture: $TARGETARCH" && exit 1; \
-    fi && \
-    apt-get install -y -f
+  pybind11 
 
 COPY docker/drone_entrypoint.sh /root/entrypoint.sh
 RUN chmod +x /root/entrypoint.sh
 
-RUN echo "alias sws='source ~/.bash_profile && source /root/dependencies_ws/install/setup.bash && source /root/ros2_ws/install/setup.bash'" >> ~/.bashrc && \
-    echo "alias bwt='source ~/.bash_profile && source /root/dependencies_ws/install/setup.bash && colcon build --symlink-install --packages-select wire_tracking'" >> ~/.bashrc && \
-    echo "alias bbr='source ~/.bash_profile && source /root/dependencies_ws/install/setup.bash && colcon build --symlink-install --packages-select bag_recorder'" >> ~/.bashrc && \
-    echo "alias bws='source ~/.bash_profile && source /root/dependencies_ws/install/setup.bash && colcon build --symlink-install'" >> ~/.bashrc && \
-    echo "export ROS_DOMAIN_ID=68" >> ~/.bashrc && \
-    echo "source /root/dependencies_ws/install/setup.bash" >> ~/.bashrc && \
-    echo "[ -f /root/ros2_ws/install/setup.bash ] && source /root/ros2_ws/install/setup.bash" >> ~/.bashrc
+COPY drone/src /root/skyer_onboard/src/
+WORKDIR /root/skyer_onboard
+RUN /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    colcon build --symlink-install --parallel-workers \"$(nproc)\" --cmake-args -Wno-dev"
+
+RUN echo "source /root/skyer_onboard/install/setup.bash" >> ~/.bashrc
 
